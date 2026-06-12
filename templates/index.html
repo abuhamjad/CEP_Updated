@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Python Excel Automator</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:#f9fafb; --surface:#fff; --border:#e5e7eb; --text:#111827;
+      --text-muted:#6b7280; --text-faint:#9ca3af; --accent:#3b82f6;
+      --accent-h:#2563eb; --success:#22c55e; --grid:#e5e7eb; --row-hover:#f9fafb;
+      --shadow:0 4px 24px rgba(0,0,0,.08); --shadow-lg:0 8px 40px rgba(0,0,0,.13);
+    }
+    .dark {
+      --bg:#030712; --surface:#111827; --border:#1f2937; --text:#f9fafb;
+      --text-muted:#9ca3af; --text-faint:#4b5563; --grid:#1f2937; --row-hover:#1f2937;
+      --shadow:0 4px 24px rgba(0,0,0,.4); --shadow-lg:0 8px 40px rgba(0,0,0,.5);
+    }
+    body {
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+      background:var(--bg); color:var(--text); min-height:100vh;
+      padding:2rem; transition:background .25s,color .25s; font-size:14px; line-height:1.5;
+    }
+    .container { max-width:1200px; margin:0 auto; }
+    h1 { font-size:1.6rem; font-weight:700; letter-spacing:-.02em; }
+    h2 { font-size:1rem; font-weight:600; }
+
+    /* Card */
+    .card {
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:12px; padding:1.25rem 1.5rem;
+      transition:background .25s,border-color .25s;
+    }
+
+    /* Buttons */
+    .btn {
+      display:inline-flex; align-items:center; gap:.4rem;
+      padding:.5rem 1.1rem; border-radius:8px; border:1px solid transparent;
+      font-size:.875rem; font-weight:500; cursor:pointer;
+      transition:background .15s,opacity .15s; white-space:nowrap;
+    }
+    .btn:disabled { opacity:.5; cursor:not-allowed; }
+    .btn-primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+    .btn-primary:not(:disabled):hover { background:var(--accent-h); }
+    .btn-outline { background:transparent; color:var(--text); border-color:var(--border); }
+    .btn-outline:hover { background:var(--row-hover); }
+    .btn-lg { padding:.65rem 1.4rem; font-size:.95rem; }
+    .btn svg { width:15px; height:15px; flex-shrink:0; }
+
+    /* Header */
+    header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:2rem; }
+    header p { color:var(--text-muted); margin-top:.25rem; }
+    #theme-toggle {
+      padding:.45rem; border-radius:8px; border:1px solid var(--border);
+      background:var(--surface); cursor:pointer; color:var(--text-muted);
+    }
+    #theme-toggle svg { width:18px; height:18px; display:block; }
+
+    /* Upload */
+    .upload-row { display:flex; align-items:center; gap:1rem; margin-top:.75rem; }
+    .file-chosen { display:flex; align-items:center; gap:.4rem; color:var(--text-muted); font-size:.875rem; }
+
+    /* Actions */
+    .actions { display:flex; gap:.75rem; margin-bottom:1.5rem; flex-wrap:wrap; }
+    .export-row { display:flex; gap:.75rem; flex-wrap:wrap; margin-bottom:1.25rem; }
+
+    /* Report grid */
+    .report-container{
+        display:flex;
+        flex-direction:column;
+        gap:1.5rem;
+        margin-top:1rem;
+    }
+
+    .table-card{
+        width:100%;
+    }
+
+    .chart-card{
+        width:100%;
+    }
+    @media(max-width:860px){ .report-grid { grid-template-columns:1fr; } }
+
+    /* Table */
+    .table-scroll { overflow:auto; max-height:500px; border-radius:8px; border:1px solid var(--border); }
+    table { width:100%; border-collapse:collapse; font-size:.825rem; }
+    thead tr { background:var(--row-hover); position:sticky; top:0; z-index:1; }
+    th,td { padding:.5rem .85rem; text-align:left; border:1px solid var(--grid); }
+    th { color:var(--text-muted); font-weight:600; }
+    tbody tr:hover { background:var(--row-hover); }
+
+    /* Popups */
+    .bottom-popup {
+      position:fixed; bottom:1.5rem; left:50%; transform:translateX(-50%);
+      width:420px; max-width:calc(100vw - 2rem);
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:16px; box-shadow:var(--shadow-lg); z-index:100; overflow:hidden;
+      display:none;
+    }
+    .popup-header {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:.65rem 1rem; background:var(--row-hover); border-bottom:1px solid var(--border);
+    }
+    .popup-header-left { display:flex; align-items:center; gap:.5rem; font-size:.875rem; }
+    .popup-header-right { display:flex; gap:.25rem; }
+    .icon-btn {
+      padding:.25rem; border:none; background:transparent; cursor:pointer;
+      color:var(--text-muted); border-radius:6px;
+    }
+    .icon-btn:hover { background:var(--border); }
+    .icon-btn svg { width:15px; height:15px; display:block; }
+    .progress-track { height:3px; background:var(--border); }
+    .progress-fill { height:100%; background:var(--accent); transition:width .5s; width:0%; }
+    .task-list { padding:.75rem 1rem; display:flex; flex-direction:column; gap:.5rem; }
+    .task-item { display:flex; align-items:center; gap:.6rem; font-size:.825rem; }
+    .task-item svg { width:15px; height:15px; flex-shrink:0; }
+    .task-pending { color:var(--text-faint); }
+    .task-processing { color:#60a5fa; }
+    .task-completed { color:var(--text-faint); text-decoration:line-through; }
+
+    /* Email confirm */
+    #email-confirm {
+      display:none; padding:1rem 1.1rem;
+      align-items:flex-start; gap:.75rem;
+    }
+    #email-confirm .confirm-text p { font-size:.875rem; }
+    #email-confirm .confirm-text span { font-size:.775rem; color:var(--text-muted); display:block; margin-top:2px; }
+
+    /* Email modal */
+    #modal-backdrop {
+      display:none; position:fixed; inset:0; background:rgba(0,0,0,.45);
+      backdrop-filter:blur(4px); z-index:200; align-items:center; justify-content:center;
+    }
+    .modal-box {
+      background:var(--surface); border:1px solid var(--border);
+      border-radius:16px; box-shadow:var(--shadow-lg);
+      padding:1.5rem; width:420px; max-width:calc(100vw - 2rem);
+    }
+    .modal-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:1.25rem; }
+    .modal-header-left { display:flex; align-items:center; gap:.5rem; }
+    .modal-header svg { color:var(--accent); width:18px; height:18px; }
+    .form-group { margin-bottom:1rem; }
+    .form-group label { display:block; font-size:.8rem; font-weight:500; color:var(--text-muted); margin-bottom:.35rem; }
+    .form-group input,.form-group textarea {
+      width:100%; padding:.5rem .75rem; border:1px solid var(--border); border-radius:8px;
+      background:var(--bg); color:var(--text); font-size:.875rem; font-family:inherit; resize:none;
+    }
+    .form-group input:focus,.form-group textarea:focus { outline:none; border-color:var(--accent); }
+    .form-error { color:#ef4444; font-size:.75rem; margin-top:.25rem; display:none; }
+    .modal-note { font-size:.75rem; color:var(--text-faint); margin-bottom:1rem; }
+    .modal-footer { display:flex; gap:.75rem; }
+    .modal-footer .btn { flex:1; justify-content:center; }
+
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .spin { animation:spin .8s linear infinite; display:inline-block; transform-origin:center; }
+    .hidden { display:none !important; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <header>
+    <div>
+      <h1>Python Excel Automator</h1>
+      <p>Upload an Excel file to process it with Pandas automation</p>
+    </div>
+    <button id="theme-toggle" onclick="toggleTheme()">
+      <svg id="icon-moon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z"/></svg>
+      <svg id="icon-sun" class="hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="#facc15"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z"/></svg>
+    </button>
+  </header>
+
+  <!-- Upload card -->
+  <div class="card" style="margin-bottom:1.5rem">
+    <h2 style="margin-bottom:.75rem">Upload Excel File</h2>
+    <label style="font-size:.8rem;font-weight:500;color:var(--text-muted)">Select Excel File (.xlsx, .xls)</label>
+    <div class="upload-row">
+      <input type="file" id="file-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="onFileChange(this)" />
+      <button class="btn btn-outline" onclick="document.getElementById('file-input').click()">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"/></svg>
+        Choose File
+      </button>
+      <div class="file-chosen hidden" id="file-label">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="#22c55e"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/></svg>
+        <span id="file-name"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Action buttons -->
+  <div class="actions hidden" id="action-row">
+    <button class="btn btn-primary btn-lg" id="start-btn" onclick="startProcessing()">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+      Start Processing
+    </button>
+    <button class="btn btn-outline btn-lg" onclick="resetAll()">Reset</button>
+  </div>
+
+  <!-- Export buttons -->
+  <div class="export-row hidden" id="export-row">
+    <button class="btn btn-outline" id="pdf-btn" onclick="handlePDF()">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+      Export as PDF
+    </button>
+    <button class="btn btn-outline" onclick="handleExcel()">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m.75 12 3 3m0 0 3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"/></svg>
+      Export as Excel
+    </button>
+    <button class="btn btn-outline" onclick="openModal()">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75"/></svg>
+      Email Report
+    </button>
+  </div>
+
+  <!-- Report -->
+  <div class="report-container hidden" id="report-capture">
+    <div class="card table-card">
+
+        <h2 style="margin-bottom:.2rem">
+            Affected Hypervisors
+        </h2>
+
+        <p id="row-count"
+           style="font-size:.75rem;color:var(--text-muted);margin-bottom:.9rem">
+           0 count returned
+        </p>
+
+        <div class="table-scroll">
+            <table id="data-table"></table>
+        </div>
+
+    </div>
+
+    <div class="card chart-card">
+
+        <h2 style="margin-bottom:.2rem">
+            State-wise Nodes Above Threshold
+        </h2>
+
+        <p style="font-size:.75rem;color:var(--text-muted);margin-bottom:.9rem">
+            Number of hypervisors exceeding 70% memory utilization
+        </p>
+
+        <canvas id="chart-canvas"></canvas>
+
+    </div>
+
+</div>
+
+</div>
+
+<!-- Task status popup -->
+<div class="bottom-popup" id="task-popup">
+  <div class="popup-header">
+    <div class="popup-header-left">
+      <span id="popup-spinner-wrap"><svg class="spin" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="#60a5fa"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/></svg></span>
+      <span id="popup-label">Starting…</span>
+      <span id="popup-pct" style="font-size:.75rem;color:var(--text-faint)">0%</span>
+    </div>
+    <div class="popup-header-right">
+      <button class="icon-btn" id="collapse-btn" onclick="toggleCollapse()">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/></svg>
+      </button>
+      <button class="icon-btn" onclick="closeTaskPopup()">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+  <div class="task-list" id="task-list"></div>
+</div>
+
+<!-- Email confirm popup -->
+<div class="bottom-popup" id="email-confirm">
+  <div id="email-confirm" style="display:flex;align-items:flex-start;gap:.75rem;padding:1rem 1.1rem">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="#22c55e" style="flex-shrink:0;margin-top:1px"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
+    <div class="confirm-text" style="flex:1;min-width:0">
+      <p>Report sent to <strong id="confirm-email"></strong></p>
+      <span id="confirm-subject"></span>
+    </div>
+    <button class="icon-btn" onclick="closeConfirm()">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- Email modal -->
+<div id="modal-backdrop" onclick="backdropClick(event)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(4px);z-index:200;align-items:center;justify-content:center">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-header-left">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="var(--accent)"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75"/></svg>
+        <h2>Email Report</h2>
+      </div>
+      <button class="icon-btn" onclick="closeModal()">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="form-group">
+      <label for="email-to">Recipient Email</label>
+      <input type="email" id="email-to" placeholder="recipient@example.com" />
+      <p class="form-error" id="email-error">Please enter a valid email address.</p>
+    </div>
+    <div class="form-group">
+      <label for="email-subject">Subject</label>
+      <input type="text" id="email-subject" value="Excel Automation Report" />
+    </div>
+    <div class="form-group">
+      <label for="email-msg">Message</label>
+      <textarea id="email-msg" rows="4">Please find the attached CEP Memory Dashboard report containing affected hypervisors and state analysis.</textarea>
+    </div>
+    <p class="modal-note">The PDF (table + chart) and Excel file (table only) will be attached automatically.</p>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="sendEmail()">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5"/></svg>
+        Send Report
+      </button>
+      <button class="btn btn-outline" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+
+let tableData = [];
+let chartData = [];
+let chart;
+
+const TASKS = [
+  'Reading CSV / Excel File',
+  'Filtering CEP Hypervisors',
+  'Applying 70% Memory Threshold',
+  'Extracting Site & Node Data',
+  'Finding Highest Memory Per Node',
+  'Generating State Analysis',
+  'Building Report Table'
+];
+
+let isDark=false, isProcessing=false, collapsed=false, confirmTimer=null;
+let taskStatuses = TASKS.map(()=>'pending');
+
+function toggleTheme(){
+  isDark=!isDark;
+  document.documentElement.classList.toggle('dark',isDark);
+  document.getElementById('icon-moon').classList.toggle('hidden',isDark);
+  document.getElementById('icon-sun').classList.toggle('hidden',!isDark);
+  if(!document.getElementById('report-capture').classList.contains('hidden')) drawChart();
+}
+
+function onFileChange(el){
+  const f=el.files[0]; if(!f) return;
+  document.getElementById('file-name').textContent=f.name;
+  document.getElementById('file-label').classList.remove('hidden');
+  document.getElementById('action-row').classList.remove('hidden');
+  document.getElementById('export-row').classList.add('hidden');
+  document.getElementById('report-capture').classList.add('hidden');
+  closeTaskPopup(); taskStatuses=TASKS.map(()=>'pending'); isProcessing=false; setStartBtn();
+}
+
+async function startProcessing(){
+
+    const file =
+        document.getElementById(
+            'file-input'
+        ).files[0];
+
+    if(!file){
+        alert('Please select a file');
+        return;
+    }
+
+    if(isProcessing) return;
+
+    isProcessing = true;
+
+    setStartBtn();
+
+    showTaskPopup();
+
+    const formData =
+        new FormData();
+
+    formData.append(
+        'file',
+        file
+    );
+
+    try{
+
+        const response =
+            await fetch(
+                '/process',
+                {
+                    method:'POST',
+                    body:formData
+                }
+            );
+
+        const data =
+            await response.json();
+
+        tableData =
+            data.table;
+
+        chartData =
+            data.chart;
+
+        showReport(
+            tableData
+        );
+
+        buildChart(
+            chartData
+        );
+
+        taskStatuses =
+            TASKS.map(
+                ()=> 'completed'
+            );
+
+        renderTasks();
+
+        updatePopupHeader();
+
+        setPct(100);
+
+    }
+
+    catch(err){
+
+        alert(
+            'Processing Failed'
+        );
+
+        console.error(err);
+    }
+
+    isProcessing = false;
+
+    setStartBtn();
+}
+
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+
+function setPct(p){
+  document.getElementById('progress-fill').style.width=p+'%';
+  document.getElementById('popup-pct').textContent=p+'%';
+}
+
+function setStartBtn(){
+  const b=document.getElementById('start-btn');
+  b.disabled=isProcessing;
+  b.innerHTML=isProcessing
+    ?`<svg class="spin" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/></svg> Processing…`
+    :`<svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" width="15" height="15"><path d="M8 5v14l11-7z"/></svg> Start Processing`;
+}
+
+function showTaskPopup(){ document.getElementById('task-popup').style.display='block'; collapsed=false; updateCollapse(); }
+function closeTaskPopup(){ document.getElementById('task-popup').style.display='none'; }
+function toggleCollapse(){ collapsed=!collapsed; document.getElementById('task-list').style.display=collapsed?'none':'flex'; updateCollapse(); }
+function updateCollapse(){
+  document.getElementById('collapse-btn').innerHTML=collapsed
+    ?`<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 15.75 7.5-7.5 7.5 7.5"/></svg>`
+    :`<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/></svg>`;
+}
+function updatePopupHeader(){
+  const done=taskStatuses.every(s=>s==='completed');
+  const ai=taskStatuses.indexOf('processing');
+  document.getElementById('popup-label').textContent=done?'Processing complete':ai>=0?TASKS[ai]:'Waiting…';
+  document.getElementById('popup-spinner-wrap').innerHTML=done
+    ?`<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="#22c55e"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>`
+    :`<svg class="spin" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="#60a5fa"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>`;
+}
+
+function renderTasks(){
+  const svgDone=`<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="#22c55e"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>`;
+  const svgProc=`<svg class="spin" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="#60a5fa"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>`;
+  const svgPend=`<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><circle cx="12" cy="12" r="9"/></svg>`;
+  document.getElementById('task-list').innerHTML=TASKS.map((n,i)=>{
+    const s=taskStatuses[i];
+    const cls=s==='processing'?'task-processing':s==='completed'?'task-completed':'task-pending';
+    const ico=s==='completed'?svgDone:s==='processing'?svgProc:svgPend;
+    return `<div class="task-item ${cls}">${ico}<span>${n}</span></div>`;
+  }).join('');
+}
+
+function showReport(rows){
+
+    if(!rows || rows.length === 0){
+        return;
+    }
+
+    const cols = [
+      "Site",
+      "Hypervisor",
+      "Date",
+      "Memory_Used_Percentage_Prometheus_Max_H_Cloud"
+    ];
+
+    document.getElementById('row-count').textContent =
+        rows.length + ' rows returned';
+
+    document.getElementById('data-table').innerHTML = `
+        <thead>
+            <tr>
+                ${cols.map(c => `<th>${c}</th>`).join('')}
+            </tr>
+        </thead>
+        <tbody>
+            ${rows.map(r => `
+                <tr>
+                    ${cols.map(c => `<td>${r[c]}</td>`).join('')}
+                </tr>
+            `).join('')}
+        </tbody>
+    `;
+
+    document
+        .getElementById('report-capture')
+        .classList.remove('hidden');
+
+    document
+        .getElementById('export-row')
+        .classList.remove('hidden');
+}
+
+function buildChart(data){
+
+    const ctx =
+        document
+        .getElementById(
+            'chart-canvas'
+        );
+
+    if(chart){
+        chart.destroy();
+    }
+
+    const canvasCtx =
+        ctx.getContext(
+            '2d'
+        );
+
+    const gradient =
+        canvasCtx
+        .createLinearGradient(
+            0,
+            0,
+            0,
+            400
+        );
+
+    gradient.addColorStop(
+        0,
+        '#1e3a8a'
+    );
+
+    gradient.addColorStop(
+        1,
+        '#93c5fd'
+    );
+
+    chart =
+        new Chart(
+            ctx,
+            {
+                type:'bar',
+
+                data:{
+                    labels:
+                        data.map(
+                            x =>
+                            x.State
+                        ),
+
+                    datasets:[
+                        {
+                            label:
+                            'Nodes Above 70%',
+
+                            data:
+                                data.map(
+                                    x =>
+                                    x["Node Count"]
+                                ),
+
+                            backgroundColor:
+                                gradient,
+
+                            borderRadius:8
+                        }
+                    ]
+                },
+
+                options:{
+                    responsive:true,
+
+                    plugins:{
+                        legend:{
+                            display:false
+                        }
+                    }
+                }
+            }
+        );
+}
+window.addEventListener('resize',()=>{ if(!document.getElementById('report-capture').classList.contains('hidden')) drawChart(); });
+
+function resetAll(){
+  document.getElementById('file-input').value='';
+  document.getElementById('file-label').classList.add('hidden');
+  document.getElementById('action-row').classList.add('hidden');
+  document.getElementById('export-row').classList.add('hidden');
+  document.getElementById('report-capture').classList.add('hidden');
+  closeTaskPopup(); isProcessing=false; taskStatuses=TASKS.map(()=>'pending'); setStartBtn();
+}
+
+async function handlePDF(){
+  const btn=document.getElementById('pdf-btn');
+  btn.disabled=true;
+  btn.innerHTML=`<svg class="spin" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/></svg> Generating…`;
+  try{
+    const el=document.getElementById('report-capture');
+    const c=await html2canvas(el,{scale:2,useCORS:true,backgroundColor:isDark?'#030712':'#f9fafb'});
+    const {jsPDF}=window.jspdf;
+    const pdf=new jsPDF({orientation:'landscape',unit:'px',format:'a4'});
+    const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
+    const ratio=Math.min(pw/c.width,ph/c.height);
+    pdf.addImage(c.toDataURL('image/png'),'PNG',(pw-c.width*ratio)/2,(ph-c.height*ratio)/2,c.width*ratio,c.height*ratio);
+    pdf.save(
+    'CEP-Memory-Report.pdf'
+    );
+  }catch(e){alert('PDF failed: '+e.message);}
+  btn.disabled=false;
+  btn.innerHTML=`<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" width="15" height="15"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg> Export as PDF`;
+}
+
+function handleExcel(){
+
+    if(!tableData.length){
+        alert("No data available");
+        return;
+    }
+
+    const wb =
+        XLSX.utils.book_new();
+
+    const ws =
+        XLSX.utils.json_to_sheet(
+            tableData
+        );
+
+    XLSX.utils.book_append_sheet(
+        wb,
+        ws,
+        "CEP Report"
+    );
+
+    XLSX.writeFile(
+        wb,
+        "CEP-Memory-Report.xlsx"
+    );
+}
+
+function openModal(){
+  document.getElementById('modal-backdrop').style.display='flex';
+  document.getElementById('email-to').value='';
+  document.getElementById('email-error').style.display='none';
+}
+function closeModal(){ document.getElementById('modal-backdrop').style.display='none'; }
+function backdropClick(e){ if(e.target===document.getElementById('modal-backdrop')) closeModal(); }
+function sendEmail(){
+  const email=document.getElementById('email-to').value.trim();
+  if(!email||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+    document.getElementById('email-error').style.display='block'; return;
+  }
+  const subject=document.getElementById('email-subject').value||'CEP Memory Dashboard Report';
+  closeModal(); showConfirm(email,subject);
+}
+
+function showConfirm(email,subject){
+  if(confirmTimer) clearTimeout(confirmTimer);
+  document.getElementById('confirm-email').textContent=email;
+  document.getElementById('confirm-subject').textContent=`Subject: "${subject}" · PDF + Excel attached`;
+  document.getElementById('email-confirm').style.display='flex';
+  confirmTimer=setTimeout(closeConfirm,6000);
+}
+function closeConfirm(){
+  document.getElementById('email-confirm').style.display='none';
+  clearTimeout(confirmTimer);
+}
+</script>
+</body>
+</html>
