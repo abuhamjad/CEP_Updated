@@ -204,11 +204,10 @@ def process_file():
 
     # Remove time, keep only date
     final_df["Date"] = (
-        pd.to_datetime(
-            final_df["Date"],
-            errors="coerce"
-        )
-        .dt.strftime("%d/%m/%y")
+        final_df["Date"]
+        .astype(str)
+        .str.split(",")
+        .str[0]
     )
 
     # Round memory values
@@ -217,16 +216,25 @@ def process_file():
         .round(2)
     )
 
-    table_data = final_df[
-        [
-            "Site",
-            "Hypervisor",
-            "Date",
-            "Memory_Used_Percentage_Prometheus_Max_H_Cloud"
+    table_data = (
+        final_df[
+            [
+                "Site",
+                "Hypervisor",
+                "Date",
+                "Memory_Used_Percentage_Prometheus_Max_H_Cloud"
+            ]
         ]
-    ].to_dict(
-        orient="records"
-    )
+        .rename(
+            columns={
+                "Memory_Used_Percentage_Prometheus_Max_H_Cloud":
+                "Memory Usage (%)"
+            }
+        )
+        .to_dict(
+            orient="records"
+        )
+)
 
     return jsonify({
         "summary": {
