@@ -1,16 +1,51 @@
 from flask import Flask, render_template, request, jsonify
 import pandas as pd
+import win32com.client
+import pythoncom
+import smtplib
+from email.message import EmailMessage
+from dotenv import load_dotenv
+from cryptography.fernet import Fernet
+import json
 import os
+
+load_dotenv()
 
 app = Flask(__name__)
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+REPORT_FOLDER = "reports"
+
+os.makedirs(
+    REPORT_FOLDER,
+    exist_ok=True
+)
+
+DATA_FOLDER = "data"
+
+os.makedirs(
+    DATA_FOLDER,
+    exist_ok=True
+)
+
+KEY_FILE = os.path.join(
+    DATA_FOLDER,
+    "secret.key"
+)
+
+SETTINGS_FILE = os.path.join(
+    DATA_FOLDER,
+    "email_settings.enc"
+)
+
 progress = {
     "percent": 0,
     "status": "Waiting..."
 }
+
+latest_report_file = None
 
 
 @app.route("/")
@@ -225,16 +260,32 @@ def process_file():
                 "Memory_Used_Percentage_Prometheus_Max_H_Cloud"
             ]
         ]
-        .rename(
-            columns={
-                "Memory_Used_Percentage_Prometheus_Max_H_Cloud":
-                "Memory Usage (%)"
-            }
-        )
         .to_dict(
             orient="records"
         )
 )
+
+    report_path = os.path.join(
+        REPORT_FOLDER,
+        "CEP_Memory_Report.xlsx"
+    )
+
+    export_df = final_df[
+        [
+            "Site",
+            "Hypervisor",
+            "Date",
+            "Memory_Used_Percentage_Prometheus_Max_H_Cloud"
+        ]
+    ]
+
+    export_df.to_excel(
+            report_path,
+            index=False
+        )
+    
+    global latest_report_file
+    latest_report_file = report_path
 
     return jsonify({
         "summary": {
@@ -246,6 +297,85 @@ def process_file():
         "table": table_data,
         "chart": chart_data
     })
+
+@app.route("/send-report", methods=["POST"])
+def send_report():
+
+    try:
+
+        data = request.json
+
+        msg = EmailMessage()
+
+        msg["Subject"] = data["subject"]
+
+        msg["From"] = os.getenv(
+            "SMTP_EMAIL"
+        )
+
+        msg["To"] = data["to"]
+
+        if data.get("cc"):
+            msg["Cc"] = data["cc"]
+
+        msg.set_content(
+            data["message"]
+        )
+
+        global latest_report_file
+
+        with open(
+            latest_report_file,
+            "rb"
+        ) as f:
+
+            msg.add_attachment(
+                f.read(),
+                maintype="application",
+                subtype=
+                "vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                filename=
+                "CEP_Memory_Report.xlsx"
+            )
+
+        server = smtplib.SMTP(
+            os.getenv(
+                "SMTP_SERVER"
+            ),
+            int(
+                os.getenv(
+                    "SMTP_PORT"
+                )
+            )
+        )
+
+        server.starttls()
+
+        server.login(
+            os.getenv(
+                "SMTP_EMAIL"
+            ),
+            os.getenv(
+                "SMTP_PASSWORD"
+            )
+        )
+
+        server.send_message(
+            msg
+        )
+
+        server.quit()
+
+        return jsonify({
+            "success": True
+        })
+
+    except Exception as e:
+
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        })
 
 
 if __name__ == "__main__":

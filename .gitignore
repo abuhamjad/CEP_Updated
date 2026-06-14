@@ -1,2 +1,6 @@
-test_data
-upload
+# Ignored test data and upload folders
+test_data/
+upload/
+
+# Ignored files
+.env

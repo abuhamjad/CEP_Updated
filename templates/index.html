@@ -308,6 +308,15 @@
       <p class="form-error" id="email-error">Please enter a valid email address.</p>
     </div>
     <div class="form-group">
+        <label for="email-cc">CC</label>
+
+        <input
+            type="text"
+            id="email-cc"
+            placeholder="manager@company.com"
+        />
+    </div>
+    <div class="form-group">
       <label for="email-subject">Subject</label>
       <input type="text" id="email-subject" value="Excel Automation Report" />
     </div>
@@ -617,7 +626,7 @@ function showReport(rows){
                 <th>Site</th>
                 <th>Hypervisor</th>
                 <th>Date</th>
-                <th>Memory Usage (%)</th>
+                <th>Memory_Used_Percentage_Prometheus_Max_H_Cloud</th>
             </tr>
         </thead>
         <tbody>
@@ -633,7 +642,7 @@ function showReport(rows){
 
         const memory =
     parseFloat(
-        row["Memory Usage (%)"]
+        row["Memory_Used_Percentage_Prometheus_Max_H_Cloud"]
        );
 
         html += `
@@ -844,13 +853,61 @@ function openModal(){
 }
 function closeModal(){ document.getElementById('modal-backdrop').style.display='none'; }
 function backdropClick(e){ if(e.target===document.getElementById('modal-backdrop')) closeModal(); }
-function sendEmail(){
-  const email=document.getElementById('email-to').value.trim();
-  if(!email||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
-    document.getElementById('email-error').style.display='block'; return;
-  }
-  const subject=document.getElementById('email-subject').value||'CEP Memory Dashboard Report';
-  closeModal(); showConfirm(email,subject);
+
+async function sendEmail(){
+
+    const to =
+        document.getElementById(
+            "email-to"
+        ).value;
+
+    const cc =
+        document.getElementById(
+            "email-cc"
+        ).value;
+
+    const subject =
+        document.getElementById(
+            "email-subject"
+        ).value;
+
+    const message =
+        document.getElementById(
+            "email-msg"
+        ).value;
+
+    const response =
+        await fetch(
+            "/send-report",
+            {
+                method:"POST",
+                headers:{
+                    "Content-Type":
+                    "application/json"
+                },
+                body:JSON.stringify({
+                    to:to,
+                    cc:cc,
+                    subject:subject,
+                    message:message
+                })
+            }
+        );
+
+    const result =
+        await response.json();
+
+    if(result.success){
+
+        closeModal();
+
+    }else{
+
+        alert(
+            result.error
+        );
+
+    }
 }
 
 function showConfirm(email,subject){
