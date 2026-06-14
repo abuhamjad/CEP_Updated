@@ -1,6 +1,8 @@
 # Ignored test data and upload folders
-test_data/
-upload/
+/test_data/
+/upload/
+/data/
+/reports/
 
 # Ignored files
 .env
