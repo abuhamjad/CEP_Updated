@@ -27,7 +27,9 @@ function toggleTheme(){
     .classList.contains('hidden')
     &&
     chartData.length
-  ){
+  )
+  console.log(result);
+  {
     buildChart(chartData);
   }
 }

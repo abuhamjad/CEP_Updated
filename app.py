@@ -89,19 +89,58 @@ def process_file():
     progress["status"] = "Finding date column..."
     
 
-    # Column C (3rd column) contains date/time
-    date_col = df.columns[2]
+    date_col = None
+
+    for col in df.columns:
+
+        sample = (
+            df[col]
+            .dropna()
+            .head(20)
+        )
+
+        if len(sample) == 0:
+            continue
+
+        converted = pd.to_datetime(
+            sample,
+            errors="coerce"
+        )
+
+        if converted.notna().sum() >= len(sample) * 0.8:
+            date_col = col
+            break
+
+    if date_col is None:
+
+        return jsonify({
+            "error": "Date column not found"
+        }), 400
 
     # --------------------------------------------------
     progress["percent"] = 30
     progress["status"] = "Selecting columns..."
-    
+
+    memory_col = next(
+        (
+            col
+            for col in df.columns
+            if "memory_used_percentage" in str(col).lower()
+            and "max" in str(col).lower()
+        ),
+        None
+    )
+
+    if memory_col is None:
+        return jsonify({
+            "error": "Memory column not found"
+        }), 400
 
     df = df[
         [
             "Short name",
             date_col,
-            "Memory_Used_Percentage_Prometheus_Max_H_Cloud"
+            memory_col
         ]
     ]
 
@@ -138,9 +177,7 @@ def process_file():
     
 
     df["Memory"] = pd.to_numeric(
-        df[
-            "Memory_Used_Percentage_Prometheus_Max_H_Cloud"
-        ],
+        df[memory_col],
         errors="coerce"
     )
 
@@ -149,7 +186,6 @@ def process_file():
     ]
 
     threshold_rows = len(df)
-
     # --------------------------------------------------
     progress["percent"] = 70
     progress["status"] = "Extracting Site and Node..."
@@ -228,11 +264,13 @@ def process_file():
         }
     )
 
-    # Remove time, keep only date
-    final_df["Date"] = pd.to_datetime(
-        final_df["Date"],
-        errors="coerce"
-    ).dt.date
+    final_df["Date"] = (
+        pd.to_datetime(
+            final_df["Date"],
+            errors="coerce"
+        )
+        .dt.strftime("%d-%b-%Y")
+    )
 
     # Round memory values
     final_df["Memory"] = (
@@ -246,13 +284,13 @@ def process_file():
                 "Site",
                 "Hypervisor",
                 "Date",
-                "Memory_Used_Percentage_Prometheus_Max_H_Cloud"
+                memory_col
             ]
         ]
         .to_dict(
             orient="records"
         )
-)
+    )
 
     report_path = os.path.join(
         REPORT_FOLDER,
@@ -264,7 +302,7 @@ def process_file():
             "Site",
             "Hypervisor",
             "Date",
-            "Memory_Used_Percentage_Prometheus_Max_H_Cloud"
+            memory_col
         ]
     ]
 
