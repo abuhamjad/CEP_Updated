@@ -1,6 +1,6 @@
-# Ignored test data and upload folders
-test_data/
-upload/
-
-# Ignored files
+venv/
+__pycache__/
+*.pyc
 .env
+uploads/*
+reports/*
