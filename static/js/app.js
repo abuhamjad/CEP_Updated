@@ -1,0 +1,723 @@
+let visualProgress = 0;
+let progressTimer = null;
+let taskTimer = null;
+
+let tableData = [];
+let chartData = [];
+let chart;
+
+const TASKS = [
+    "Importing Data",
+    "Processing Records",
+    "Generating Report",
+    "Finalizing"
+];
+
+let isDark=false, isProcessing=false, collapsed=false, confirmTimer=null;
+let taskStatuses = TASKS.map(()=>'pending');
+
+function toggleTheme(){
+  isDark=!isDark;
+  document.documentElement.classList.toggle('dark',isDark);
+  document.getElementById('icon-moon').classList.toggle('hidden',isDark);
+  document.getElementById('icon-sun').classList.toggle('hidden',!isDark);
+  if(
+    !document
+    .getElementById('report-capture')
+    .classList.contains('hidden')
+    &&
+    chartData.length
+  ){
+    buildChart(chartData);
+  }
+}
+
+function onFileChange(el){
+  const f=el.files[0]; if(!f) return;
+  document.getElementById('file-name').textContent=f.name;
+  document.getElementById('file-label').classList.remove('hidden');
+  document.getElementById('action-row').classList.remove('hidden');
+  document.getElementById('export-row').classList.add('hidden');
+  document.getElementById('report-capture').classList.add('hidden');
+  closeTaskPopup(); taskStatuses=TASKS.map(()=>'pending'); isProcessing=false; setStartBtn();
+}
+
+function getStatusFromProgress(pct){
+
+    if(pct < 20)
+        return "Reading file...";
+
+    if(pct < 45)
+        return "Filtering records...";
+
+    if(pct < 75)
+        return "Analyzing memory usage...";
+
+    if(pct < 95)
+        return "Generating report...";
+
+    return "Finalizing...";
+}
+
+function startTaskAnimation() {
+
+    const stages = [
+    { task: 0, delay: 4000 },
+    { task: 1, delay: 8000 },
+    { task: 2, delay: 12000 },
+    { task: 3, delay: 15000 }
+    ];
+
+    let current = 0;
+
+    function nextStage() {
+
+        if (!isProcessing) return;
+
+        taskStatuses.forEach((_, i) => {
+
+            if (i < current) {
+                taskStatuses[i] = "completed";
+            }
+            else if (i === current) {
+                taskStatuses[i] = "processing";
+            }
+            else {
+                taskStatuses[i] = "pending";
+            }
+
+        });
+
+        renderTasks();
+        updatePopupHeader();
+
+        if (current >= stages.length - 1) {
+            return;
+        }
+
+        taskTimer = setTimeout(() => {
+
+            current++;
+
+            nextStage();
+
+        }, stages[current].delay);
+
+    }
+
+    nextStage();
+}
+
+function startFakeProgress() {
+
+    visualProgress = 0;
+
+    progressTimer = setInterval(() => {
+
+        if (!isProcessing) {
+            clearInterval(progressTimer);
+            return;
+        }
+
+        if (visualProgress < 95) {
+
+            let increment;
+
+            if (visualProgress < 30) {
+                increment = 4;
+            }
+            else if (visualProgress < 60) {
+                increment = 2;
+            }
+            else if (visualProgress < 85) {
+                increment = 1;
+            }
+            else {
+                increment = 0.3;
+            }
+
+            visualProgress += increment;
+
+            if (visualProgress > 95) {
+                visualProgress = 95;
+            }
+
+            setPct(
+                Math.round(visualProgress)
+            );
+
+            document.getElementById(
+                "popup-label"
+            ).textContent =
+                getStatusFromProgress(
+                    visualProgress
+                );
+
+        }
+
+    }, 1000);
+
+}
+
+async function startProcessing(){
+
+    const file =
+        document.getElementById(
+            'file-input'
+        ).files[0];
+
+    if(!file){
+        alert('Please select a file');
+        return;
+    }
+
+    if(isProcessing) return;
+
+    isProcessing = true;
+
+    setStartBtn();
+
+    showTaskPopup();
+
+    startFakeProgress();
+
+    startTaskAnimation();
+
+    const formData =
+        new FormData();
+
+    formData.append(
+        'file',
+        file
+    );
+
+    try{
+
+        const response =
+            await fetch(
+                '/process',
+                {
+                    method:'POST',
+                    body:formData
+                }
+            );
+
+        const data =
+            await response.json();
+
+        tableData =
+            data.table;
+
+        chartData =
+            data.chart;
+
+        showReport(
+            tableData
+        );
+
+        buildChart(
+            chartData
+        );
+
+        clearInterval(progressTimer);
+
+        clearTimeout(taskTimer);
+
+        visualProgress = 100;
+
+        taskStatuses =
+            TASKS.map(
+                ()=> 'completed'
+            );
+
+        renderTasks();
+
+        document.getElementById(
+            "popup-label"
+        ).textContent =
+            "Completed";
+
+        setPct(100);
+
+        document.getElementById(
+            "popup-label"
+        ).textContent = "Completed";
+
+        setTimeout(() => {
+            closeTaskPopup();
+            }, 3000);
+
+    }
+
+    catch(err){
+
+        alert(
+            'Processing Failed'
+        );
+
+        console.error(err);
+    }
+
+    isProcessing = false;
+
+    setStartBtn();
+}
+
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+
+function setPct(p){
+  document.getElementById('progress-fill').style.width=p+'%';
+  document.getElementById('popup-pct').textContent=p+'%';
+}
+
+function setStartBtn(){
+  const b=document.getElementById('start-btn');
+  b.disabled=isProcessing;
+  b.innerHTML=isProcessing
+    ?`<svg class="spin" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/></svg> Processing…`
+    :`<svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" width="15" height="15"><path d="M8 5v14l11-7z"/></svg> Start Processing`;
+}
+
+function showTaskPopup(){ document.getElementById('task-popup').style.display='block'; collapsed=false; updateCollapse(); }
+function closeTaskPopup(){ document.getElementById('task-popup').style.display='none'; }
+function toggleCollapse(){ collapsed=!collapsed; document.getElementById('task-list').style.display=collapsed?'none':'flex'; updateCollapse(); }
+function updateCollapse(){
+  document.getElementById('collapse-btn').innerHTML=collapsed
+    ?`<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 15.75 7.5-7.5 7.5 7.5"/></svg>`
+    :`<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/></svg>`;
+}
+function updatePopupHeader(){
+  const done=taskStatuses.every(s=>s==='completed');
+  const ai=taskStatuses.indexOf('processing');
+  document.getElementById('popup-label').textContent=done?'Processing complete':ai>=0?TASKS[ai]:'Waiting…';
+  document.getElementById('popup-spinner-wrap').innerHTML=done
+    ?`<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="#22c55e"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>`
+    :`<svg class="spin" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="#60a5fa"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>`;
+}
+
+function renderTasks(){
+  const svgDone=`<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="#22c55e"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>`;
+  const svgProc=`<svg class="spin" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="#60a5fa"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>`;
+  const svgPend=`<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><circle cx="12" cy="12" r="9"/></svg>`;
+  document.getElementById('task-list').innerHTML=TASKS.map((n,i)=>{
+    const s=taskStatuses[i];
+    const cls=s==='processing'?'task-processing':s==='completed'?'task-completed':'task-pending';
+    const ico=s==='completed'?svgDone:s==='processing'?svgProc:svgPend;
+    return `<div class="task-item ${cls}">${ico}<span>${n}</span></div>`;
+  }).join('');
+}
+
+function getMemoryStyle(index,totalRows){
+
+    const ratio =
+        index /
+        Math.max(
+            totalRows - 1,
+            1
+        );
+
+    const start = {
+        r:179,
+        g:33,
+        b:52
+    };
+
+    const middle = {
+        r:247,
+        g:127,
+        b:190
+    };
+
+    const end = {
+        r:255,
+        g:255,
+        b:255
+    };
+
+    let r,g,b;
+
+    if(ratio <= 0.5){
+
+        const t =
+            ratio * 2;
+
+        r = Math.round(
+            start.r +
+            (
+                middle.r -
+                start.r
+            ) * t
+        );
+
+        g = Math.round(
+            start.g +
+            (
+                middle.g -
+                start.g
+            ) * t
+        );
+
+        b = Math.round(
+            start.b +
+            (
+                middle.b -
+                start.b
+            ) * t
+        );
+
+    }
+    else{
+
+        const t =
+            (ratio - 0.5) * 2;
+
+        r = Math.round(
+            middle.r +
+            (
+                end.r -
+                middle.r
+            ) * t
+        );
+
+        g = Math.round(
+            middle.g +
+            (
+                end.g -
+                middle.g
+            ) * t
+        );
+
+        b = Math.round(
+            middle.b +
+            (
+                end.b -
+                middle.b
+            ) * t
+        );
+
+    }
+
+    return {
+
+        background:
+            `rgb(${r},${g},${b})`,
+
+        color:
+            ratio < 0.35
+            ? "#ffffff"
+            : "#111111"
+    };
+}
+
+function showReport(rows){
+
+    if(!rows || rows.length === 0){
+        return;
+    }
+
+    document.getElementById(
+        "row-count"
+    ).textContent =
+        rows.length + " rows returned";
+
+    let html = `
+        <thead>
+            <tr>
+                <th>Site</th>
+                <th>Hypervisor</th>
+                <th>Date</th>
+                <th>Memory_Used_Percentage_Prometheus_Max_H_Cloud</th>
+            </tr>
+        </thead>
+        <tbody>
+    `;
+
+    rows.forEach((row,index)=>{
+
+        const style =
+            getMemoryStyle(
+                index,
+                rows.length
+            );
+
+        const memory =
+    parseFloat(
+        row["Memory_Used_Percentage_Prometheus_Max_H_Cloud"]
+       );
+
+        html += `
+        <tr>
+
+            <td>${row.Site ?? ""}</td>
+
+            <td>${row.Hypervisor ?? ""}</td>
+
+            <td>${row.Date ?? ""}</td>
+
+            <td
+                style="
+                    background:${style.background};
+                    color:${style.color};
+                    font-weight:600;
+                    text-align:left;
+                    padding-left:14px;
+                "
+            >
+                ${memory.toFixed(2)}
+            </td>
+
+        </tr>
+        `;
+
+    });
+
+    html += `
+        </tbody>
+    `;
+
+    document.getElementById(
+        "data-table"
+    ).innerHTML = html;
+
+    document
+        .getElementById(
+            "report-capture"
+        )
+        .classList.remove(
+            "hidden"
+        );
+
+    document
+        .getElementById(
+            "export-row"
+        )
+        .classList.remove(
+            "hidden"
+        );
+}
+
+function buildChart(data){
+
+    const ctx =
+        document
+        .getElementById(
+            'chart-canvas'
+        );
+
+    if(chart){
+        chart.destroy();
+    }
+
+    const canvasCtx =
+        ctx.getContext(
+            '2d'
+        );
+
+    const gradient =
+        canvasCtx
+        .createLinearGradient(
+            0,
+            0,
+            0,
+            400
+        );
+
+    gradient.addColorStop(
+        0,
+        '#1e3a8a'
+    );
+
+    gradient.addColorStop(
+        1,
+        '#93c5fd'
+    );
+
+    chart =
+        new Chart(
+            ctx,
+            {
+                type:'bar',
+
+                data:{
+                    labels:
+                        data.map(
+                            x =>
+                            x.State
+                        ),
+
+                    datasets:[
+                        {
+                            label:
+                            'Nodes Above 70%',
+
+                            data:
+                                data.map(
+                                    x =>
+                                    x["Node Count"]
+                                ),
+
+                            backgroundColor:
+                                gradient,
+
+                            borderRadius:8
+                        }
+                    ]
+                },
+
+                options:{
+                    responsive:true,
+
+                    plugins:{
+                        legend:{
+                            display:false
+                        }
+                    }
+                }
+            }
+        );
+}
+window.addEventListener('resize',()=>{
+
+    if(
+        !document
+        .getElementById('report-capture')
+        .classList.contains('hidden')
+        &&
+        chartData.length
+    ){
+        buildChart(chartData);
+    }
+
+});
+
+function resetAll(){
+  document.getElementById('file-input').value='';
+  document.getElementById('file-label').classList.add('hidden');
+  document.getElementById('action-row').classList.add('hidden');
+  document.getElementById('export-row').classList.add('hidden');
+  document.getElementById('report-capture').classList.add('hidden');
+  closeTaskPopup(); isProcessing=false; taskStatuses=TASKS.map(()=>'pending'); setStartBtn();
+}
+
+async function handlePDF(){
+  const btn=document.getElementById('pdf-btn');
+  btn.disabled=true;
+  btn.innerHTML=`<svg class="spin" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/></svg> Generating…`;
+  try{
+    const el=document.getElementById('report-capture');
+    const c=await html2canvas(el,{scale:2,useCORS:true,backgroundColor:isDark?'#030712':'#f9fafb'});
+    const {jsPDF}=window.jspdf;
+    const pdf=new jsPDF({orientation:'landscape',unit:'px',format:'a4'});
+    const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
+    const ratio=Math.min(pw/c.width,ph/c.height);
+    pdf.addImage(c.toDataURL('image/png'),'PNG',(pw-c.width*ratio)/2,(ph-c.height*ratio)/2,c.width*ratio,c.height*ratio);
+    pdf.save(
+    'CEP-Memory-Report.pdf'
+    );
+  }catch(e){alert('PDF failed: '+e.message);}
+  btn.disabled=false;
+  btn.innerHTML=`<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" width="15" height="15"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg> Export as PDF`;
+}
+
+function handleExcel(){
+
+    if(!tableData.length){
+        alert("No data available");
+        return;
+    }
+
+    const wb =
+        XLSX.utils.book_new();
+
+    const ws =
+        XLSX.utils.json_to_sheet(
+            tableData
+        );
+
+    XLSX.utils.book_append_sheet(
+        wb,
+        ws,
+        "CEP Report"
+    );
+
+    XLSX.writeFile(
+        wb,
+        "CEP-Memory-Report.xlsx"
+    );
+}
+
+function openModal(){
+  document.getElementById('modal-backdrop').style.display='flex';
+  document.getElementById('email-to').value='';
+  document.getElementById('email-error').style.display='none';
+}
+function closeModal(){ document.getElementById('modal-backdrop').style.display='none'; }
+function backdropClick(e){ if(e.target===document.getElementById('modal-backdrop')) closeModal(); }
+
+async function sendEmail(){
+
+    const to =
+        document.getElementById(
+            "email-to"
+        ).value;
+
+    const cc =
+        document.getElementById(
+            "email-cc"
+        ).value;
+
+    const subject =
+        document.getElementById(
+            "email-subject"
+        ).value;
+
+    const message =
+        document.getElementById(
+            "email-msg"
+        ).value;
+
+    const response =
+        await fetch(
+            "/send-report",
+            {
+                method:"POST",
+                headers:{
+                    "Content-Type":
+                    "application/json"
+                },
+                body:JSON.stringify({
+                    to:to,
+                    cc:cc,
+                    subject:subject,
+                    message:message
+                })
+            }
+        );
+
+    const result =
+        await response.json();
+
+    if(result.success){
+
+        closeModal();
+
+    }else{
+
+        alert(
+            result.error
+        );
+
+    }
+}
+
+function showConfirm(email,subject){
+  if(confirmTimer) clearTimeout(confirmTimer);
+  document.getElementById('confirm-email').textContent=email;
+  document.getElementById('confirm-subject').textContent=`Subject: "${subject}" · PDF + Excel attached`;
+  document.getElementById('email-confirm').style.display='flex';
+  confirmTimer=setTimeout(closeConfirm,6000);
+}
+function closeConfirm(){
+  document.getElementById('email-confirm').style.display='none';
+  clearTimeout(confirmTimer);
+}

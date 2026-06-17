@@ -1,13 +1,12 @@
 from flask import Flask, render_template, request, jsonify
 import pandas as pd
-import win32com.client
-import pythoncom
 import smtplib
 from email.message import EmailMessage
 from dotenv import load_dotenv
 from cryptography.fernet import Fernet
 import json
 import os
+import time
 
 load_dotenv()
 
@@ -78,6 +77,7 @@ def process_file():
     # --------------------------------------------------
     progress["percent"] = 10
     progress["status"] = "Reading file..."
+    
 
     if file.filename.endswith(".csv"):
         df = pd.read_csv(filepath)
@@ -87,6 +87,7 @@ def process_file():
     # --------------------------------------------------
     progress["percent"] = 20
     progress["status"] = "Finding date column..."
+    
 
     # Column C (3rd column) contains date/time
     date_col = df.columns[2]
@@ -94,6 +95,7 @@ def process_file():
     # --------------------------------------------------
     progress["percent"] = 30
     progress["status"] = "Selecting columns..."
+    
 
     df = df[
         [
@@ -108,6 +110,7 @@ def process_file():
     # --------------------------------------------------
     progress["percent"] = 40
     progress["status"] = "Filtering CEP records..."
+    
 
     df = df[
         df["Short name"]
@@ -119,6 +122,7 @@ def process_file():
     # --------------------------------------------------
     progress["percent"] = 50
     progress["status"] = "Removing INSTALLER/DASHBOARD..."
+    
 
     df = df[
         ~df["Short name"].str.contains(
@@ -131,6 +135,7 @@ def process_file():
     # --------------------------------------------------
     progress["percent"] = 60
     progress["status"] = "Applying threshold..."
+    
 
     df["Memory"] = pd.to_numeric(
         df[
@@ -148,36 +153,20 @@ def process_file():
     # --------------------------------------------------
     progress["percent"] = 70
     progress["status"] = "Extracting Site and Node..."
+    
+    split_cols = df["Short name"].str.split(
+    "_",
+    n=1,
+    expand=True
+)
+    df["Site"] = split_cols[0]
 
-    def extract_site(text):
-
-        text = str(text)
-
-        if "_" not in text:
-            return ""
-
-        return text.split("_", 1)[0]
-
-    def extract_hypervisor(text):
-
-        text = str(text)
-
-        if "_" not in text:
-            return ""
-
-        return text.split("_", 1)[1]
-
-    df["Site"] = df["Short name"].apply(
-        extract_site
-    )
-
-    df["Hypervisor"] = df["Short name"].apply(
-        extract_hypervisor
-    )
+    df["Hypervisor"] = split_cols[1]
 
     # --------------------------------------------------
     progress["percent"] = 80
     progress["status"] = "Finding highest memory per node..."
+    
 
     idx = (
         df.groupby(
@@ -191,6 +180,7 @@ def process_file():
     # --------------------------------------------------
     progress["percent"] = 90
     progress["status"] = "Sorting..."
+    
 
     final_df = final_df.sort_values(
         "Memory",
@@ -202,6 +192,7 @@ def process_file():
     # --------------------------------------------------
     progress["percent"] = 95
     progress["status"] = "Building chart..."
+    
 
     def extract_state(site):
 
@@ -238,12 +229,10 @@ def process_file():
     )
 
     # Remove time, keep only date
-    final_df["Date"] = (
-        final_df["Date"]
-        .astype(str)
-        .str.split(",")
-        .str[0]
-    )
+    final_df["Date"] = pd.to_datetime(
+        final_df["Date"],
+        errors="coerce"
+    ).dt.date
 
     # Round memory values
     final_df["Memory"] = (
@@ -377,6 +366,5 @@ def send_report():
             "error": str(e)
         })
 
-
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000)
