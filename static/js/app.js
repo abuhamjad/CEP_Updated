@@ -35,8 +35,15 @@ function toggleTheme(){
 }
 
 function onFileChange(el){
-  const f=el.files[0]; if(!f) return;
-  document.getElementById('file-name').textContent=f.name;
+    const files = el.files;
+    if(files.length === 0)
+        return;
+
+    document.getElementById(
+        'file-name'
+    ).textContent =
+        `${files.length} file(s) selected`;
+  document.getElementById('file-name').textContent=files.name;
   document.getElementById('file-label').classList.remove('hidden');
   document.getElementById('action-row').classList.remove('hidden');
   document.getElementById('export-row').classList.add('hidden');
@@ -163,17 +170,33 @@ function startFakeProgress() {
 
 async function startProcessing(){
 
-    const file =
+    const fileInput =
         document.getElementById(
             'file-input'
-        ).files[0];
+        );
 
-    if(!file){
-        alert('Please select a file');
+    const files =
+        fileInput.files;
+
+    if(files.length === 0){
+        alert(
+            'Please select at least one file'
+        );
         return;
     }
 
     if(isProcessing) return;
+
+    const formData =
+        new FormData();
+
+    for(let file of files){
+
+        formData.append(
+            'files',
+            file
+        );
+    }
 
     isProcessing = true;
 
@@ -184,14 +207,6 @@ async function startProcessing(){
     startFakeProgress();
 
     startTaskAnimation();
-
-    const formData =
-        new FormData();
-
-    formData.append(
-        'file',
-        file
-    );
 
     try{
 
@@ -207,6 +222,12 @@ async function startProcessing(){
         const data =
             await response.json();
 
+        if(data.error){
+            throw new Error(
+                data.error
+            );
+        }
+
         tableData =
             data.table;
 
@@ -221,9 +242,13 @@ async function startProcessing(){
             chartData
         );
 
-        clearInterval(progressTimer);
+        clearInterval(
+            progressTimer
+        );
 
-        clearTimeout(taskTimer);
+        clearTimeout(
+            taskTimer
+        );
 
         visualProgress = 100;
 
@@ -241,23 +266,22 @@ async function startProcessing(){
 
         setPct(100);
 
-        document.getElementById(
-            "popup-label"
-        ).textContent = "Completed";
-
         setTimeout(() => {
+
             closeTaskPopup();
-            }, 3000);
+
+        },3000);
 
     }
 
     catch(err){
 
+        console.error(err);
+
         alert(
+            err.message ||
             'Processing Failed'
         );
-
-        console.error(err);
     }
 
     isProcessing = false;
@@ -601,24 +625,133 @@ function resetAll(){
   closeTaskPopup(); isProcessing=false; taskStatuses=TASKS.map(()=>'pending'); setStartBtn();
 }
 
-async function handlePDF(){
-  const btn=document.getElementById('pdf-btn');
-  btn.disabled=true;
-  btn.innerHTML=`<svg class="spin" xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/></svg> Generating…`;
-  try{
-    const el=document.getElementById('report-capture');
-    const c=await html2canvas(el,{scale:2,useCORS:true,backgroundColor:isDark?'#030712':'#f9fafb'});
-    const {jsPDF}=window.jspdf;
-    const pdf=new jsPDF({orientation:'landscape',unit:'px',format:'a4'});
-    const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight();
-    const ratio=Math.min(pw/c.width,ph/c.height);
-    pdf.addImage(c.toDataURL('image/png'),'PNG',(pw-c.width*ratio)/2,(ph-c.height*ratio)/2,c.width*ratio,c.height*ratio);
-    pdf.save(
-    'CEP-Memory-Report.pdf'
-    );
-  }catch(e){alert('PDF failed: '+e.message);}
-  btn.disabled=false;
-  btn.innerHTML=`<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" width="15" height="15"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg> Export as PDF`;
+async function handlePDF() {
+
+    const btn = document.getElementById('pdf-btn');
+
+    btn.disabled = true;
+    btn.innerHTML = 'Generating...';
+
+    try {
+
+        const { jsPDF } = window.jspdf;
+
+        const pdf = new jsPDF(
+            'landscape',
+            'pt',
+            'a4'
+        );
+
+        // Title
+        pdf.setFontSize(20);
+        pdf.text(
+            'CEP Memory Report',
+            40,
+            40
+        );
+
+        pdf.setFontSize(10);
+
+        pdf.text(
+            `Generated: ${new Date().toLocaleString()}`,
+            40,
+            60
+        );
+
+        // Extract table data
+        const rows = [];
+
+        document
+            .querySelectorAll('#data-table tbody tr')
+            .forEach(tr => {
+
+                const row = [];
+
+                tr.querySelectorAll('td')
+                  .forEach(td =>
+                      row.push(td.innerText)
+                  );
+
+                rows.push(row);
+            });
+
+        // Generate table
+        pdf.autoTable({
+
+            startY: 80,
+
+            head: [[
+                'Site',
+                'Hypervisor',
+                'Date',
+                'Memory Usage'
+            ]],
+
+            body: rows,
+
+            theme: 'grid',
+
+            styles: {
+                fontSize: 8
+            },
+
+            headStyles: {
+                fillColor: [37,99,235]
+            },
+
+            alternateRowStyles: {
+                fillColor: [245,245,245]
+            }
+
+        });
+
+        // Add chart on new page
+        pdf.addPage();
+
+        pdf.setFontSize(18);
+
+        pdf.text(
+            'Circle-wise Nodes Above Threshold',
+            40,
+            40
+        );
+
+        const chartCanvas =
+            document.getElementById(
+                'chart-canvas'
+            );
+
+        const chartImg =
+            chartCanvas.toDataURL(
+                'image/png'
+            );
+
+        pdf.addImage(
+            chartImg,
+            'PNG',
+            40,
+            70,
+            700,
+            350
+        );
+
+        pdf.save(
+            'CEP_Memory_Report.pdf'
+        );
+
+    }
+    catch(e) {
+
+        alert(
+            'PDF generation failed: '
+            + e.message
+        );
+    }
+
+    btn.disabled = false;
+
+    btn.innerHTML =
+        'Export as PDF';
 }
 
 function handleExcel(){
@@ -648,11 +781,23 @@ function handleExcel(){
     );
 }
 
-function openModal(){
-  document.getElementById('modal-backdrop').style.display='flex';
-  document.getElementById('email-to').value='';
-  document.getElementById('email-error').style.display='none';
+async function openModal(){
+
+    document
+        .getElementById(
+            'modal-backdrop'
+        )
+        .style.display = 'flex';
+
+    document
+        .getElementById(
+            'email-error'
+        )
+        .style.display = 'none';
+
+    await loadEmailSettings();
 }
+
 function closeModal(){ document.getElementById('modal-backdrop').style.display='none'; }
 function backdropClick(e){ if(e.target===document.getElementById('modal-backdrop')) closeModal(); }
 
@@ -723,3 +868,133 @@ function closeConfirm(){
   document.getElementById('email-confirm').style.display='none';
   clearTimeout(confirmTimer);
 }
+
+async function saveEmailSettings(){
+
+    const payload = {
+
+        sender_email:
+            document.getElementById(
+                'sender-email'
+            ).value,
+
+        sender_password:
+            document.getElementById(
+                'sender-password'
+            ).value,
+
+        to:
+            document.getElementById(
+                'email-to'
+            ).value,
+
+        cc:
+            document.getElementById(
+                'email-cc'
+            ).value,
+
+        subject:
+            document.getElementById(
+                'email-subject'
+            ).value,
+
+        message:
+            document.getElementById(
+                'email-msg'
+            ).value
+    };
+
+    try{
+
+        const response =
+            await fetch(
+                '/save-email-settings',
+                {
+                    method:'POST',
+
+                    headers:{
+                        'Content-Type':
+                            'application/json'
+                    },
+
+                    body:JSON.stringify(
+                        payload
+                    )
+                }
+            );
+
+        const result =
+            await response.json();
+
+        if(result.success){
+
+            alert(
+                'Settings Saved Successfully'
+            );
+
+        }else{
+
+            alert(
+                'Failed to save settings'
+            );
+        }
+
+    }
+
+    catch(error){
+
+        console.error(error);
+
+        alert(
+            'Error saving settings'
+        );
+    }
+}
+
+async function loadEmailSettings(){
+
+    const response =
+        await fetch(
+            '/load-email-settings'
+        );
+
+    const settings =
+        await response.json();
+
+    document.getElementById(
+        'sender-email'
+    ).value =
+        settings.sender_email || '';
+
+    document.getElementById(
+        'sender-password'
+    ).value =
+        settings.sender_password || '';
+
+    document.getElementById(
+        'email-to'
+    ).value =
+        settings.to || '';
+
+    document.getElementById(
+        'email-cc'
+    ).value =
+        settings.cc || '';
+
+    document.getElementById(
+        'email-subject'
+    ).value =
+        settings.subject ||
+        'CEP Memory Dashboard Report';
+
+    document.getElementById(
+        'email-msg'
+    ).value =
+        settings.message ||
+        'Please find the attached CEP Memory Dashboard report containing affected hypervisors and state analysis.';
+}
+
+window.addEventListener(
+    'DOMContentLoaded',
+    loadEmailSettings
+);

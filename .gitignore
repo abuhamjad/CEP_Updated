@@ -1,6 +1,65 @@
-venv/
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# VS Code
+.vscode/
+
+# Environment variables
 .env
+
+# Uploaded files
 uploads/*
+!uploads/.gitkeep
+
+# Generated reports
 reports/*
+!reports/.gitkeep
+
+# Temporary files
+temp/*
+!temp/.gitkeep
+
+# Email credentials (IMPORTANT)
+data/email_settings.enc
+data/secret.key
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python packaging
+build/
+dist/
+*.egg-info/
+
+# Logs
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Cache
+.pytest_cache/
+.mypy_cache/
+
+# Flask
+instance/
+.webassets-cache
+
+# Coverage
+.coverage
+htmlcov/
+
+# IDE files
+.idea/
+
+# Misc
+*.bak
+*.tmp

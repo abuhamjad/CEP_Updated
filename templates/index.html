@@ -12,6 +12,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
   
 </head>
 <body>
@@ -34,7 +35,7 @@
     <h2 style="margin-bottom:.75rem">Upload Excel File</h2>
     <label style="font-size:.8rem;font-weight:500;color:var(--text-muted)">Select Excel File (.xlsx, .xls)</label>
     <div class="upload-row">
-      <input type="file" id="file-input" accept=".xlsx,.xls,.csv" style="display:none" onchange="onFileChange(this)" />
+      <input type="file" id="file-input" multiple accept=".xlsx,.xls,.csv" style="display:none" onchange="onFileChange(this)" />
       <button class="btn btn-outline" onclick="document.getElementById('file-input').click()">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5"/></svg>
         Choose File
@@ -162,6 +163,23 @@
       </button>
     </div>
     <div class="form-group">
+      <label>Sender Email</label>
+
+      <input
+          type="email"
+          id="sender-email"
+          placeholder="yourmail@gmail.com">
+    </div>
+
+    <div class="form-group">
+      <label>Gmail App Password</label>
+
+      <input
+          type="password"
+          id="sender-password"
+          placeholder="16 character app password">
+    </div>
+    <div class="form-group">
       <label for="email-to">Recipient Email</label>
       <input type="email" id="email-to" placeholder="recipient@example.com" />
       <p class="form-error" id="email-error">Please enter a valid email address.</p>
@@ -185,6 +203,7 @@
     </div>
     <p class="modal-note">The PDF (table + chart) and Excel file (table only) will be attached automatically.</p>
     <div class="modal-footer">
+      <button class="btn btn-outline" onclick="saveEmailSettings()">Save Settings</button>
       <button class="btn btn-primary" onclick="sendEmail()">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5"/></svg>
         Send Report

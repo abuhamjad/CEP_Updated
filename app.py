@@ -1,14 +1,11 @@
 from flask import Flask, render_template, request, jsonify
 import pandas as pd
 import smtplib
-from email.message import EmailMessage
-from dotenv import load_dotenv
 from cryptography.fernet import Fernet
 import json
 import os
-import time
-
-load_dotenv()
+import plotly.express as px
+from utils.email_utils import send_report_email, load_settings
 
 app = Flask(__name__)
 
@@ -45,6 +42,49 @@ progress = {
 }
 
 latest_report_file = None
+latest_processed_df = None
+latest_chart_df = None
+
+def get_key():
+
+    try:
+
+        if not os.path.exists(KEY_FILE):
+
+            key = Fernet.generate_key()
+
+            with open(KEY_FILE, "wb") as f:
+                f.write(key)
+
+        with open(KEY_FILE, "rb") as f:
+            key = f.read()
+
+        Fernet(key)  # validate key
+
+        return key
+
+    except:
+
+        key = Fernet.generate_key()
+
+        with open(KEY_FILE, "wb") as f:
+            f.write(key)
+
+        return key
+
+def save_settings(data):
+
+    key = get_key()
+
+    fernet = Fernet(key)
+
+    encrypted = fernet.encrypt(
+        json.dumps(data).encode()
+    )
+
+    with open(SETTINGS_FILE, "wb") as f:
+        f.write(encrypted)
+
 
 
 @app.route("/")
@@ -65,24 +105,45 @@ def process_file():
     progress["percent"] = 0
     progress["status"] = "Starting..."
 
-    file = request.files["file"]
+    files = request.files.getlist("files")
 
-    filepath = os.path.join(
-        UPLOAD_FOLDER,
-        file.filename
-    )
+    if not files:
+        return jsonify({
+            "error": "No files uploaded"
+        }), 400
 
-    file.save(filepath)
-
-    # --------------------------------------------------
     progress["percent"] = 10
-    progress["status"] = "Reading file..."
-    
+    progress["status"] = "Reading files..."
 
-    if file.filename.endswith(".csv"):
-        df = pd.read_csv(filepath)
-    else:
-        df = pd.read_excel(filepath)
+    master_df = pd.DataFrame()
+
+    for file in files:
+
+        filepath = os.path.join(
+            UPLOAD_FOLDER,
+            file.filename
+        )
+
+        file.save(filepath)
+
+        if file.filename.lower().endswith(".csv"):
+
+            temp_df = pd.read_csv(
+                filepath
+            )
+
+        else:
+
+            temp_df = pd.read_excel(
+                filepath
+            )
+
+        master_df = pd.concat(
+            [master_df, temp_df],
+            ignore_index=True
+        )
+
+    df = master_df.copy()
 
     # --------------------------------------------------
     progress["percent"] = 20
@@ -186,18 +247,34 @@ def process_file():
     ]
 
     threshold_rows = len(df)
+
+    print("Rows after CEP filter:", len(df))
+    print(df.head())
     # --------------------------------------------------
     progress["percent"] = 70
     progress["status"] = "Extracting Site and Node..."
     
-    split_cols = df["Short name"].str.split(
-    "_",
-    n=1,
-    expand=True
-)
-    df["Site"] = split_cols[0]
+    if df.empty:
+        return jsonify({
+            "error": "No CEP records found after filtering."
+        }), 400
 
-    df["Hypervisor"] = split_cols[1]
+    split_cols = (
+        df["Short name"]
+        .astype(str)
+        .str.split(
+            "_",
+            n=1,
+            expand=True
+        )
+    )
+
+    df["Site"] = split_cols.iloc[:, 0]
+
+    if split_cols.shape[1] > 1:
+        df["Hypervisor"] = split_cols.iloc[:, 1]
+    else:
+        df["Hypervisor"] = "UNKNOWN"
 
     # --------------------------------------------------
     progress["percent"] = 80
@@ -312,7 +389,14 @@ def process_file():
         )
     
     global latest_report_file
+    global latest_processed_df
+    global latest_chart_df
+
     latest_report_file = report_path
+
+    latest_processed_df = export_df.copy()
+
+    latest_chart_df = chart_df.copy()
 
     return jsonify({
         "summary": {
@@ -325,84 +409,40 @@ def process_file():
         "chart": chart_data
     })
 
+@app.route(
+    "/save-email-settings",
+    methods=["POST"]
+)
+def save_email_settings():
+
+    data = request.json
+
+    save_settings(data)
+
+    return jsonify({
+        "success": True
+    })
+
+
+@app.route(
+    "/load-email-settings"
+)
+def load_email_settings():
+
+    settings = load_settings()
+
+    return jsonify(settings)
+
 @app.route("/send-report", methods=["POST"])
 def send_report():
 
-    try:
-
-        data = request.json
-
-        msg = EmailMessage()
-
-        msg["Subject"] = data["subject"]
-
-        msg["From"] = os.getenv(
-            "SMTP_EMAIL"
+    return jsonify({
+        "success": False,
+        "error": (
+            "Automated email functionality is temporarily "
+            "disabled pending mail server approval."
         )
-
-        msg["To"] = data["to"]
-
-        if data.get("cc"):
-            msg["Cc"] = data["cc"]
-
-        msg.set_content(
-            data["message"]
-        )
-
-        global latest_report_file
-
-        with open(
-            latest_report_file,
-            "rb"
-        ) as f:
-
-            msg.add_attachment(
-                f.read(),
-                maintype="application",
-                subtype=
-                "vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                filename=
-                "CEP_Memory_Report.xlsx"
-            )
-
-        server = smtplib.SMTP(
-            os.getenv(
-                "SMTP_SERVER"
-            ),
-            int(
-                os.getenv(
-                    "SMTP_PORT"
-                )
-            )
-        )
-
-        server.starttls()
-
-        server.login(
-            os.getenv(
-                "SMTP_EMAIL"
-            ),
-            os.getenv(
-                "SMTP_PASSWORD"
-            )
-        )
-
-        server.send_message(
-            msg
-        )
-
-        server.quit()
-
-        return jsonify({
-            "success": True
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        })
+    })
 
 if __name__ == "__main__":
     app.run(debug=True)
