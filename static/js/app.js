@@ -35,20 +35,90 @@ function toggleTheme(){
 }
 
 function onFileChange(el){
+
     const files = el.files;
-    if(files.length === 0)
+
+    if(files.length === 0){
+
+        document.getElementById(
+            'file-name'
+        ).textContent =
+            'No file selected';
+
+        document
+            .getElementById(
+                "threshold-container"
+            )
+            .classList.add(
+                "hidden"
+            );
+
+        document
+            .getElementById(
+                'action-row'
+            )
+            .classList.add(
+                'hidden'
+            );
+
         return;
+    }
 
     document.getElementById(
         'file-name'
     ).textContent =
         `${files.length} file(s) selected`;
-  document.getElementById('file-name').textContent=files.name;
-  document.getElementById('file-label').classList.remove('hidden');
-  document.getElementById('action-row').classList.remove('hidden');
-  document.getElementById('export-row').classList.add('hidden');
-  document.getElementById('report-capture').classList.add('hidden');
-  closeTaskPopup(); taskStatuses=TASKS.map(()=>'pending'); isProcessing=false; setStartBtn();
+
+    document
+        .getElementById(
+            'file-label'
+        )
+        .classList.remove(
+            'hidden'
+        );
+
+    document
+        .getElementById(
+            'action-row'
+        )
+        .classList.remove(
+            'hidden'
+        );
+
+    document
+        .getElementById(
+            "threshold-container"
+        )
+        .classList.remove(
+            "hidden"
+        );
+
+    document
+        .getElementById(
+            'export-row'
+        )
+        .classList.add(
+            'hidden'
+        );
+
+    document
+        .getElementById(
+            'report-capture'
+        )
+        .classList.add(
+            'hidden'
+        );
+
+    closeTaskPopup();
+
+    taskStatuses =
+        TASKS.map(
+            () => 'pending'
+        );
+
+    isProcessing = false;
+
+    setStartBtn();
 }
 
 function getStatusFromProgress(pct){
@@ -190,6 +260,15 @@ async function startProcessing(){
     const formData =
         new FormData();
 
+    const threshold = document.getElementById(
+        "threshold-input"
+    ).value;
+
+    formData.append(
+        "threshold",
+        threshold
+    );
+
     for(let file of files){
 
         formData.append(
@@ -230,6 +309,17 @@ async function startProcessing(){
                 data.error
             );
         }
+
+        document.getElementById(
+            "chart-description"
+        ).textContent =
+            `Number of hypervisors exceeding ${threshold}% memory utilization`;
+
+        tableData =
+            data.table;
+
+        chartData =
+            data.chart;
 
         tableData =
             data.table;
@@ -570,8 +660,7 @@ function buildChart(data){
                 data:{
                     labels:
                         data.map(
-                            x =>
-                            x.State
+                            x => x.State
                         ),
 
                     datasets:[
@@ -593,12 +682,55 @@ function buildChart(data){
                     ]
                 },
 
+                plugins:[
+                    ChartDataLabels
+                ],
+
                 options:{
+
                     responsive:true,
 
                     plugins:{
+
                         legend:{
                             display:false
+                        },
+
+                        datalabels:{
+                            color:'#ffffff',
+
+                            anchor:'start',
+
+                            align:'end',
+
+                            offset: -5,
+
+                            font:{
+                                weight:'bold',
+                                size:12
+                            }
+                        }
+                    },
+
+                    scales:{
+
+                        x:{
+                            grid:{
+                                display:false
+                            }
+                        },
+
+                        y:{
+                            beginAtZero:true,
+
+                            ticks:{
+                                stepSize:1,
+                                precision:0
+                            },
+
+                            grid:{
+                                display:false
+                            }
                         }
                     }
                 }

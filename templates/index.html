@@ -7,11 +7,17 @@
   <link rel="stylesheet"
       href="{{ url_for('static', filename='css/style.css') }}">
 
-  <title>Python Excel Automator</title>
+  <title>CEP Memory Dashboard</title>
+
+  <link rel="icon"
+      type="image/png"
+      href="{{ url_for('static', filename='assets/logo.png') }}">
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
   
 </head>
@@ -21,7 +27,7 @@
   <!-- Header -->
   <header>
     <div>
-      <h1>Python Excel Automator</h1>
+      <h1>CEP Memory Dashboard</h1>
       <p>Upload an Excel file to process it with Pandas automation</p>
     </div>
     <button id="theme-toggle" onclick="toggleTheme()">
@@ -53,6 +59,21 @@
       <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
       Start Processing
     </button>
+    <div
+        class="threshold-group hidden"
+        id="threshold-container">
+
+        <label for="threshold-input">
+            Threshold
+        </label>
+
+        <input
+            type="number"
+            id="threshold-input"
+            min="0"
+            max="100"
+            value="70">
+    </div>
     <button class="btn btn-outline btn-lg" onclick="resetAll()">Reset</button>
   </div>
 
@@ -93,9 +114,11 @@
             Circle-wise Nodes Above Threshold
         </h2>
 
-        <p style="font-size:.75rem;color:var(--text-muted);margin-bottom:.9rem">
-            Number of hypervisors exceeding 70% memory utilization
-        </p>
+        <p
+          id="chart-description"
+          style="font-size:.75rem;color:var(--text-muted);margin-bottom:.9rem">
+          Number of hypervisors exceeding threshold memory utilization
+      </p>
 
         <canvas id="chart-canvas"></canvas>
 

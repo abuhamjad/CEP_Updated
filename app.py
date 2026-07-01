@@ -51,6 +51,19 @@ def process_file():
 
     files = request.files.getlist("files")
 
+    threshold = float(
+        request.form.get(
+            "threshold",
+            70
+        )
+    )
+
+    if threshold < 0 or threshold > 100:
+        return jsonify({
+            "error":
+            "Threshold must be between 0 and 100."
+        }), 400
+
     if not files:
         return jsonify({
             "error": "No files uploaded"
@@ -60,6 +73,10 @@ def process_file():
     progress["status"] = "Reading files..."
 
     processed_dfs = []
+
+    total_rows = 0
+    cep_rows = 0
+    threshold_rows = 0
 
     for file in files:
 
@@ -124,6 +141,16 @@ def process_file():
             return jsonify({
                 "error": "Date column not found"
             }), 400
+        
+        sample_dates = pd.to_datetime(
+            df[date_col],
+            errors="coerce"
+        ).dropna()
+
+        report_date = None
+
+        if not sample_dates.empty:
+            report_date = sample_dates.iloc[0]
 
         # --------------------------------------------------
         progress["percent"] = 30
@@ -152,7 +179,7 @@ def process_file():
             ]
         ]
 
-        total_rows = len(df)
+        total_rows += len(df)
 
         # --------------------------------------------------
         progress["percent"] = 40
@@ -178,10 +205,7 @@ def process_file():
             )
         ]
 
-        cep_rows = len(df)
-        #debugging
-        print("\nRemaining rows after CEP filter:")
-        print(df["Short name"].head(20).to_list())
+        cep_rows += len(df)
 
         # --------------------------------------------------
         progress["percent"] = 50
@@ -207,10 +231,10 @@ def process_file():
         )
 
         df = df[
-            df["Memory"] >= 70
+            df["Memory"] >= threshold
         ]
 
-        threshold_rows = len(df)
+        threshold_rows += len(df)
 
         if df.empty:
 
@@ -261,6 +285,34 @@ def process_file():
         )
 
         final_df = df.loc[idx]
+
+        # Rename this file's date column
+        final_df = final_df.rename(
+            columns={
+                date_col: "Date"
+            }
+        )
+
+        # Convert to datetime
+        final_df["Date"] = pd.to_datetime(
+            final_df["Date"],
+            errors="coerce"
+        )
+
+        # Fill missing dates using THIS file's date
+        if report_date is not None:
+
+            final_df["Date"] = (
+                final_df["Date"]
+                .fillna(report_date)
+            )
+
+        # Final formatting
+        final_df["Date"] = (
+            final_df["Date"]
+            .dt.strftime("%d-%b-%Y")
+            .fillna("")
+        )
 
         processed_dfs.append(
             final_df
@@ -329,14 +381,6 @@ def process_file():
         }
     )
 
-    final_df["Date"] = (
-        pd.to_datetime(
-            final_df["Date"],
-            errors="coerce"
-        )
-        .dt.strftime("%d-%b-%Y")
-    )
-
     # Round memory values
     final_df["Memory"] = (
         final_df["Memory"]
@@ -369,7 +413,13 @@ def process_file():
             "Date",
             memory_col
         ]
-    ]
+    ].copy()
+
+    export_df = export_df.fillna("")
+
+    table_data = export_df.to_dict(
+        orient="records"
+    )
 
     export_df.to_excel(
             report_path,

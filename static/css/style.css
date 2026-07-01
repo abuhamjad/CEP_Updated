@@ -356,3 +356,50 @@ tbody tr:hover {
 .hidden {
   display:none !important;
 }
+
+.threshold-group{
+    display:flex;
+    align-items:center;
+    gap:.5rem;
+}
+
+.threshold-group label{
+    font-size:.875rem;
+    color:var(--text-muted);
+    font-weight:500;
+}
+
+.threshold-group input{
+    width:80px;
+    padding:.5rem .75rem;
+    border:1px solid var(--border);
+    border-radius:8px;
+    background:var(--surface);
+    color:var(--text);
+    font-size:.875rem;
+}
+
+.threshold-group input:focus{
+    outline:none;
+    border-color:var(--accent);
+}
+
+.threshold-group{
+    display:flex;
+    align-items:center;
+    gap:8px;
+}
+
+.threshold-group label{
+    color:var(--text-muted);
+    font-size:.85rem;
+}
+
+.threshold-group input{
+    width:70px;
+    padding:8px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    background:var(--surface);
+    color:var(--text);
+}
