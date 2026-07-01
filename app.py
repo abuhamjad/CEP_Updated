@@ -1,11 +1,9 @@
 from flask import Flask, render_template, request, jsonify
 import pandas as pd
-import smtplib
 from cryptography.fernet import Fernet
 import json
 import os
 import plotly.express as px
-from utils.email_utils import send_report_email, load_settings
 
 app = Flask(__name__)
 
@@ -19,23 +17,6 @@ os.makedirs(
     exist_ok=True
 )
 
-DATA_FOLDER = "data"
-
-os.makedirs(
-    DATA_FOLDER,
-    exist_ok=True
-)
-
-KEY_FILE = os.path.join(
-    DATA_FOLDER,
-    "secret.key"
-)
-
-SETTINGS_FILE = os.path.join(
-    DATA_FOLDER,
-    "email_settings.enc"
-)
-
 progress = {
     "percent": 0,
     "status": "Waiting..."
@@ -45,46 +26,9 @@ latest_report_file = None
 latest_processed_df = None
 latest_chart_df = None
 
-def get_key():
-
-    try:
-
-        if not os.path.exists(KEY_FILE):
-
-            key = Fernet.generate_key()
-
-            with open(KEY_FILE, "wb") as f:
-                f.write(key)
-
-        with open(KEY_FILE, "rb") as f:
-            key = f.read()
-
-        Fernet(key)  # validate key
-
-        return key
-
-    except:
-
-        key = Fernet.generate_key()
-
-        with open(KEY_FILE, "wb") as f:
-            f.write(key)
-
-        return key
-
-def save_settings(data):
-
-    key = get_key()
-
-    fernet = Fernet(key)
-
-    encrypted = fernet.encrypt(
-        json.dumps(data).encode()
-    )
-
-    with open(SETTINGS_FILE, "wb") as f:
-        f.write(encrypted)
-
+EXCLUDED_PATTERNS = (
+    "INSTALLER|DASHBOARD|HWRK|OPENSHIFT"
+)
 
 
 @app.route("/")
@@ -115,7 +59,7 @@ def process_file():
     progress["percent"] = 10
     progress["status"] = "Reading files..."
 
-    master_df = pd.DataFrame()
+    processed_dfs = []
 
     for file in files:
 
@@ -126,169 +70,213 @@ def process_file():
 
         file.save(filepath)
 
-        if file.filename.lower().endswith(".csv"):
+        try:
 
-            temp_df = pd.read_csv(
-                filepath
+            if file.filename.lower().endswith(".csv"):
+
+                df = pd.read_csv(
+                    filepath
+                )
+
+            else:
+
+                df = pd.read_excel(
+                    filepath
+                )
+
+        except Exception as e:
+
+            print(
+                f"Skipping {file.filename}: {e}"
             )
 
-        else:
-
-            temp_df = pd.read_excel(
-                filepath
-            )
-
-        master_df = pd.concat(
-            [master_df, temp_df],
-            ignore_index=True
-        )
-
-    df = master_df.copy()
-
-    # --------------------------------------------------
-    progress["percent"] = 20
-    progress["status"] = "Finding date column..."
-    
-
-    date_col = None
-
-    for col in df.columns:
-
-        sample = (
-            df[col]
-            .dropna()
-            .head(20)
-        )
-
-        if len(sample) == 0:
             continue
 
-        converted = pd.to_datetime(
-            sample,
+        # --------------------------------------------------
+        progress["percent"] = 20
+        progress["status"] = "Finding date column..."
+        
+
+        date_col = None
+
+        for col in df.columns:
+
+            sample = (
+                df[col]
+                .dropna()
+                .head(20)
+            )
+
+            if len(sample) == 0:
+                continue
+
+            converted = pd.to_datetime(
+                sample,
+                errors="coerce"
+            )
+
+            if converted.notna().sum() >= len(sample) * 0.8:
+                date_col = col
+                break
+
+        if date_col is None:
+
+            return jsonify({
+                "error": "Date column not found"
+            }), 400
+
+        # --------------------------------------------------
+        progress["percent"] = 30
+        progress["status"] = "Selecting columns..."
+
+        memory_col = next(
+            (
+                col
+                for col in df.columns
+                if "memory_used_percentage" in str(col).lower()
+                and "max" in str(col).lower()
+            ),
+            None
+        )
+
+        if memory_col is None:
+            return jsonify({
+                "error": "Memory column not found"
+            }), 400
+
+        df = df[
+            [
+                "Short name",
+                date_col,
+                memory_col
+            ]
+        ]
+
+        total_rows = len(df)
+
+        # --------------------------------------------------
+        progress["percent"] = 40
+        progress["status"] = "Filtering CEP records..."
+
+        df = df[
+            (
+                df["Short name"]
+                .str.contains(
+                    "CEP",
+                    case=False,
+                    na=False
+                )
+            )
+            &
+            (
+                ~df["Short name"]
+                .str.contains(
+                    EXCLUDED_PATTERNS,
+                    case=False,
+                    na=False
+                )
+            )
+        ]
+
+        cep_rows = len(df)
+        #debugging
+        print("\nRemaining rows after CEP filter:")
+        print(df["Short name"].head(20).to_list())
+
+        # --------------------------------------------------
+        progress["percent"] = 50
+        progress["status"] = "Removing INSTALLER/DASHBOARD..."
+        
+
+        df = df[
+            ~df["Short name"].str.contains(
+                "INSTALLER|DASHBOARD",
+                case=False,
+                na=False
+            )
+        ]
+
+        # --------------------------------------------------
+        progress["percent"] = 60
+        progress["status"] = "Applying threshold..."
+        
+
+        df["Memory"] = pd.to_numeric(
+            df[memory_col],
             errors="coerce"
         )
 
-        if converted.notna().sum() >= len(sample) * 0.8:
-            date_col = col
-            break
-
-    if date_col is None:
-
-        return jsonify({
-            "error": "Date column not found"
-        }), 400
-
-    # --------------------------------------------------
-    progress["percent"] = 30
-    progress["status"] = "Selecting columns..."
-
-    memory_col = next(
-        (
-            col
-            for col in df.columns
-            if "memory_used_percentage" in str(col).lower()
-            and "max" in str(col).lower()
-        ),
-        None
-    )
-
-    if memory_col is None:
-        return jsonify({
-            "error": "Memory column not found"
-        }), 400
-
-    df = df[
-        [
-            "Short name",
-            date_col,
-            memory_col
+        df = df[
+            df["Memory"] >= 70
         ]
-    ]
 
-    total_rows = len(df)
+        threshold_rows = len(df)
 
-    # --------------------------------------------------
-    progress["percent"] = 40
-    progress["status"] = "Filtering CEP records..."
-    
+        if df.empty:
 
-    df = df[
-        df["Short name"]
-        .str.contains("CEP", na=False)
-    ]
+            print(
+                f"{file.filename} skipped - no rows above threshold"
+            )
 
-    cep_rows = len(df)
+            continue
 
-    # --------------------------------------------------
-    progress["percent"] = 50
-    progress["status"] = "Removing INSTALLER/DASHBOARD..."
-    
+        print("Rows after CEP filter:", len(df))
+        print(df.head())
+        # --------------------------------------------------
+        progress["percent"] = 70
+        progress["status"] = "Extracting Site and Node..."
+        
+        if df.empty:
+            return jsonify({
+                "error": "No CEP records found after filtering."
+            }), 400
 
-    df = df[
-        ~df["Short name"].str.contains(
-            "INSTALLER|DASHBOARD",
-            case=False,
-            na=False
+        split_cols = (
+            df["Short name"]
+            .astype(str)
+            .str.split(
+                "_",
+                n=1,
+                expand=True
+            )
         )
-    ]
 
-    # --------------------------------------------------
-    progress["percent"] = 60
-    progress["status"] = "Applying threshold..."
-    
+        df["Site"] = split_cols.iloc[:, 0]
 
-    df["Memory"] = pd.to_numeric(
-        df[memory_col],
-        errors="coerce"
-    )
+        if split_cols.shape[1] > 1:
+            df["Hypervisor"] = split_cols.iloc[:, 1]
+        else:
+            df["Hypervisor"] = "UNKNOWN"
 
-    df = df[
-        df["Memory"] >= 70
-    ]
+        # --------------------------------------------------
+        progress["percent"] = 80
+        progress["status"] = "Finding highest memory per node..."
+        
 
-    threshold_rows = len(df)
+        idx = (
+            df.groupby(
+                ["Site", "Hypervisor"]
+            )["Memory"]
+            .idxmax()
+        )
 
-    print("Rows after CEP filter:", len(df))
-    print(df.head())
-    # --------------------------------------------------
-    progress["percent"] = 70
-    progress["status"] = "Extracting Site and Node..."
-    
-    if df.empty:
+        final_df = df.loc[idx]
+
+        processed_dfs.append(
+            final_df
+        )
+
+    if not processed_dfs:
+
         return jsonify({
-            "error": "No CEP records found after filtering."
+            "error":
+            "No qualifying CEP records found."
         }), 400
 
-    split_cols = (
-        df["Short name"]
-        .astype(str)
-        .str.split(
-            "_",
-            n=1,
-            expand=True
-        )
+    final_df = pd.concat(
+        processed_dfs,
+        ignore_index=True
     )
-
-    df["Site"] = split_cols.iloc[:, 0]
-
-    if split_cols.shape[1] > 1:
-        df["Hypervisor"] = split_cols.iloc[:, 1]
-    else:
-        df["Hypervisor"] = "UNKNOWN"
-
-    # --------------------------------------------------
-    progress["percent"] = 80
-    progress["status"] = "Finding highest memory per node..."
-    
-
-    idx = (
-        df.groupby(
-            ["Site", "Hypervisor"]
-        )["Memory"]
-        .idxmax()
-    )
-
-    final_df = df.loc[idx]
 
     # --------------------------------------------------
     progress["percent"] = 90
@@ -407,41 +395,6 @@ def process_file():
         },
         "table": table_data,
         "chart": chart_data
-    })
-
-@app.route(
-    "/save-email-settings",
-    methods=["POST"]
-)
-def save_email_settings():
-
-    data = request.json
-
-    save_settings(data)
-
-    return jsonify({
-        "success": True
-    })
-
-
-@app.route(
-    "/load-email-settings"
-)
-def load_email_settings():
-
-    settings = load_settings()
-
-    return jsonify(settings)
-
-@app.route("/send-report", methods=["POST"])
-def send_report():
-
-    return jsonify({
-        "success": False,
-        "error": (
-            "Automated email functionality is temporarily "
-            "disabled pending mail server approval."
-        )
     })
 
 if __name__ == "__main__":
